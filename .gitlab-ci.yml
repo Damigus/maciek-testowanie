@@ -1,0 +1,130 @@
+# GitLab CI/CD Pipeline dla Order Management API
+# 
+# Ten plik definiuje automatyczny pipeline uruchamiany przy każdym pushu.
+# Pipeline wykonuje testy jednostkowe, integracyjne i scenariuszowe.
+
+stages:
+  - test
+  - report
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.pip-cache"
+  FLASK_ENV: "testing"
+
+# Cache zależności Pythona między jobami
+cache:
+  paths:
+    - .pip-cache/
+    - venv/
+
+# ============================================
+# ETAP: TESTY
+# ============================================
+
+# Job: Testy jednostkowe
+# Testuje izolowaną logikę biznesową modeli
+unit_tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/test_unit.py -v --tb=short
+  tags:
+    - docker
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH
+
+# Job: Testy integracyjne
+# Testuje współpracę API z serwisami i bazą danych
+integration_tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/test_integration.py -v --tb=short
+  tags:
+    - docker
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH
+
+# Job: Testy scenariuszowe
+# Testuje pełne przepływy biznesowe end-to-end
+scenario_tests:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/test_scenarios.py -v --tb=short
+  tags:
+    - docker
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH
+
+# Job: Wszystkie testy z pokryciem kodu
+# Uruchamia kompletny zestaw testów z raportem coverage
+all_tests_with_coverage:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install --upgrade pip
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/ -v --cov=app --cov-report=term-missing --cov-report=html --cov-report=xml
+  coverage: '/TOTAL.*\s+(\d+%)/'
+  artifacts:
+    when: always
+    paths:
+      - htmlcov/
+      - coverage.xml
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    expire_in: 7 days
+  tags:
+    - docker
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ============================================
+# ETAP: RAPORT
+# ============================================
+
+# Job: Generowanie raportu
+# Publikuje raport HTML z pokryciem kodu
+pages:
+  stage: report
+  dependencies:
+    - all_tests_with_coverage
+  script:
+    - mkdir -p public
+    - cp -r htmlcov/* public/
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  tags:
+    - docker
